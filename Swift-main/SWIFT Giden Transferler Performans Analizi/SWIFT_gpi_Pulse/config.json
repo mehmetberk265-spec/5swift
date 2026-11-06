@@ -1,0 +1,14 @@
+{
+  "chat": {
+    "endpoint": "https://apim-ai-management.azure-api.net/prod-ktbusiness-apim",
+    "deployment": "gpt-5.1-ptu",
+    "api_version": "2024-12-01-preview",
+    "api_key": "a668836ff8ab431489f93101d9a47e40",
+    "max_completion_tokens": 1800
+  },
+  "speech": {
+    "region": "westeurope",
+    "api_key": "2b3c791afc124e1280819a8161dfb81c",
+    "voice": "tr-TR-EmelNeural"
+  }
+}

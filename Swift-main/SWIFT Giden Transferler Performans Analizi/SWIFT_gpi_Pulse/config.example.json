@@ -1,0 +1,14 @@
+{
+  "chat": {
+    "endpoint": "https://apim-ai-management.azure-api.net/prod-ktbusiness-apim",
+    "deployment": "gpt-5.1-ptu",
+    "api_version": "2024-12-01-preview",
+    "api_key": "BURAYA_APIM_ANAHTARI",
+    "max_completion_tokens": 1800
+  },
+  "speech": {
+    "region": "westeurope",
+    "api_key": "BURAYA_SPEECH_ANAHTARI",
+    "voice": "tr-TR-EmelNeural"
+  }
+}

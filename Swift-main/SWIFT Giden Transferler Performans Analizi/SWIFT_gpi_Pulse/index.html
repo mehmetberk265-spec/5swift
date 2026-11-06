@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="tr" data-theme="mid">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SWIFT gpi Performans Platformu · Kuveyt Türk</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div id="loader"><div class="ld-ring"></div><div>Veriler yükleniyor…</div></div>
+<aside id="sidebar">
+  <div class="brand">
+    <div class="brand-mark"><svg viewBox="0 0 40 40"><defs><linearGradient id="bg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3ee08f"/><stop offset="1" stop-color="#00843d"/></linearGradient></defs><circle cx="20" cy="20" r="18" fill="url(#bg1)"/><path d="M8 22 Q20 4 32 18" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/><circle cx="32" cy="18" r="3" fill="#fff"/><circle cx="8" cy="22" r="2.4" fill="#d9f99d"/></svg></div>
+    <div><div class="brand-t">SWIFT gpi Pulse</div><div class="brand-s">Giden Transfer Performansı</div></div>
+  </div>
+  <nav id="nav"></nav>
+  <div class="side-foot">
+    <div class="sf-card">
+      <div class="sf-t">Veri penceresi</div>
+      <div class="sf-v" id="sf-window">—</div>
+      <div class="sf-s" id="sf-gen"></div>
+    </div>
+    <button class="theme-btn" id="themeBtn" title="Tema değiştir">◐ Tema: <span id="themeName">Orta</span></button>
+  </div>
+</aside>
+<main id="main">
+  <header id="topbar">
+    <div class="tb-left"><div class="crumb" id="crumb">Genel Bakış</div><div class="tb-sub" id="tbSub"></div></div>
+    <div class="tb-right"><div id="selBadge"></div><div class="pill" id="countPill">—</div></div>
+  </header>
+  <section id="filterbar"></section>
+  <section id="view"></section>
+</main>
+<div id="drawer" class="drawer"><div class="drawer-in" id="drawerIn"></div></div>
+<div id="tip" class="tip"></div>
+<script src="assets/vendor/echarts.min.js"></script>
+<script src="assets/vendor/topojson-client.min.js"></script>
+<script src="assets/vendor/globe.gl.min.js"></script>
+<script src="data/data.js"></script>
+<script src="data/world.js"></script>
+<script src="data/events.js" defer></script>
+<script src="assets/app.js" defer></script>
+<script src="assets/p_overview.js" defer></script>
+<script src="assets/p_globe.js" defer></script>
+<script src="assets/p_tools.js" defer></script>
+</body>
+</html>

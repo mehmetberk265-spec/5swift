@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""SWIFT gpi Pulse - yerel sunucu.
+- Platform dosyalarini http://localhost:8765 adresinden sunar.
+- /api/chat  -> Azure OpenAI (APIM, gpt-5.1-ptu) proxy
+- /api/tts   -> Azure Speech (westeurope) metin->ses proxy
+- API anahtarlari yalnizca config.json icinde tutulur, tarayiciya gonderilmez.
+Sadece Python standart kutuphanesi kullanir (ek kurulum gerekmez).
+"""
+import json, os, sys, ssl, threading, webbrowser, urllib.request, urllib.error
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from xml.sax.saxutils import escape
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+PORT = int(os.environ.get("SWIFT_PORT", "8765"))
+CFG_PATH = os.path.join(ROOT, "config.json")
+
+
+def load_cfg():
+    try:
+        with open(CFG_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+
+SYSTEM_PROMPT = (
+    "Sen Kuveyt Türk'ün SWIFT gpi giden transfer performans analistisin. Türkçe, kısa ve yönetici diliyle yanıt ver. "
+    "Sadece sana verilen toplulaştırılmış istatistiklere dayan; veri yoksa açıkça söyle, sayı uydurma. "
+    "Süreleri dakika/saat/gün olarak okunur biçimde yaz. 'muhabir' = Kuveyt Türk'ten çıkıştan alıcı bankaya ulaşmaya kadar geçen süre; "
+    "'alici' = alıcı bankaya ulaşmadan alacak kaydına (ACCC) kadar geçen süre. Gerektiğinde madde işaretleri kullan."
+)
+
+
+def http_json(url, headers, payload, timeout=90):
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context()) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def chat(messages, context):
+    c = load_cfg().get("chat", {})
+    if not c.get("api_key"):
+        raise RuntimeError("config.json içinde chat.api_key tanımlı değil")
+    url = f"{c['endpoint'].rstrip('/')}/openai/deployments/{c['deployment']}/chat/completions?api-version={c.get('api_version', '2024-12-01-preview')}"
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": "Güncel filtrelenmiş veri özeti (JSON):\n" + json.dumps(context, ensure_ascii=False)}]
+    msgs += [{"role": m["role"], "content": str(m["content"])[:6000]} for m in messages if m.get("role") in ("user", "assistant")]
+    body = {"messages": msgs, "max_completion_tokens": int(c.get("max_completion_tokens", 1800))}
+    j = http_json(url, {"Content-Type": "application/json", "api-key": c["api_key"]}, body)
+    return j["choices"][0]["message"]["content"]
+
+
+def tts(text):
+    s = load_cfg().get("speech", {})
+    if not s.get("api_key"):
+        raise RuntimeError("config.json içinde speech.api_key tanımlı değil")
+    region = s.get("region", "westeurope")
+    tok_req = urllib.request.Request(f"https://{region}.api.cognitive.microsoft.com/sts/v1.0/issueToken", data=b"",
+                                     headers={"Ocp-Apim-Subscription-Key": s["api_key"]}, method="POST")
+    with urllib.request.urlopen(tok_req, timeout=20) as r:
+        token = r.read().decode()
+    voice = s.get("voice", "tr-TR-EmelNeural")
+    ssml = f"<speak version='1.0' xml:lang='tr-TR'><voice name='{voice}'>{escape(text)}</voice></speak>"
+    req = urllib.request.Request(f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1", data=ssml.encode("utf-8"),
+                                 headers={"Authorization": "Bearer " + token, "Content-Type": "application/ssml+xml",
+                                          "X-Microsoft-OutputFormat": "audio-24khz-48kbitrate-mono-mp3", "User-Agent": "swift-gpi-pulse"}, method="POST")
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+
+class H(SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k):
+        super().__init__(*a, directory=ROOT, **k)
+
+    def log_message(self, fmt, *args):
+        if "/api/" in (str(args[0]) if args else ""):
+            sys.stderr.write("[api] " + (fmt % args) + "\n")
+
+    def _send(self, code, obj=None, raw=None, ctype="application/json"):
+        data = raw if raw is not None else json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def end_headers(self):
+        if not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
+    def do_GET(self):
+        if self.path.startswith("/api/health"):
+            c = load_cfg()
+            return self._send(200, {"ok": True, "chat": bool(c.get("chat", {}).get("api_key")), "tts": bool(c.get("speech", {}).get("api_key"))})
+        if self.path.startswith("/api/test"):
+            res = {}
+            try:
+                res["chat"] = "OK · " + chat([{"role": "user", "content": "Sadece 'bağlantı başarılı' yaz."}], {})[:80]
+            except urllib.error.HTTPError as e:
+                res["chat"] = f"HTTP {e.code}: {e.read().decode(errors='ignore')[:200]}"
+            except Exception as e:
+                res["chat"] = "Hata: " + str(e)[:200]
+            try:
+                res["tts"] = f"OK · {len(tts('Bağlantı başarılı.'))} bayt ses"
+            except urllib.error.HTTPError as e:
+                res["tts"] = f"HTTP {e.code}"
+            except Exception as e:
+                res["tts"] = "Hata: " + str(e)[:200]
+            return self._send(200, res)
+        return super().do_GET()
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            return self._send(400, {"error": "geçersiz JSON"})
+        try:
+            if self.path.startswith("/api/chat"):
+                return self._send(200, {"reply": chat(body.get("messages", []), body.get("context", {}))})
+            if self.path.startswith("/api/tts"):
+                return self._send(200, raw=tts(body.get("text", "")[:3000]), ctype="audio/mpeg")
+            return self._send(404, {"error": "bulunamadı"})
+        except urllib.error.HTTPError as e:
+            return self._send(502, raw=f"Azure HTTP {e.code}: {e.read().decode(errors='ignore')[:400]}".encode(), ctype="text/plain; charset=utf-8")
+        except Exception as e:
+            return self._send(500, raw=str(e).encode(), ctype="text/plain; charset=utf-8")
+
+
+if __name__ == "__main__":
+    if not os.path.exists(CFG_PATH):
+        print("UYARI: config.json bulunamadı. AI özellikleri için config.example.json dosyasını config.json olarak kopyalayıp anahtarları girin.")
+    srv = None
+    for _p in range(PORT, PORT + 20):
+        try:
+            srv = ThreadingHTTPServer(("127.0.0.1", _p), H)
+            PORT = _p
+            break
+        except OSError as e:
+            print(f"UYARI: {_p} portu kullanılamıyor ({e}), sonraki port deneniyor...")
+    if srv is None:
+        print("HATA: Boş port bulunamadı.")
+        sys.exit(1)
+    url = f"http://127.0.0.1:{PORT}/index.html"
+    print(f"SWIFT gpi Pulse çalışıyor → {url}\nKapatmak için bu pencerede Ctrl+C.")
+    if "--no-browser" not in sys.argv:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
